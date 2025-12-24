@@ -1,0 +1,1 @@
+# Load CLIP model
