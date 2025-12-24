@@ -1,4 +1,9 @@
-# Phase 3 (query)
+"""Search pipeline: embed a text query, run FAISS, and show results.
+
+This module loads the CLIP model and FAISS index, turns the user's text
+query into a vector, and resolves nearest neighbors to image paths using
+the metadata DB.
+"""
 
 from core.model import CLIPModel
 from core.embedder import embed_text
@@ -12,6 +17,11 @@ TOP_K = 5
 
 
 def run(query, index_path, meta_db):
+    """Execute a search for `query` against the FAISS index.
+
+    The function prints results and opens high-confidence images using
+    the platform default viewer.
+    """
     # Load model and stores
     model = CLIPModel()
     index = FaissIndex(dim=512, index_path=index_path)

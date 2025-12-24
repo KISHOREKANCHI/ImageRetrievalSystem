@@ -1,6 +1,6 @@
 # 🖼️ Image Retrieval System
 
-A semantic image search system powered by OpenAI's CLIP model. This system allows you to search through a collection of images using natural language text queries, finding visually and semantically similar images without requiring manual tagging or labeling.
+Lightweight semantic image search that uses a CLIP model to embed images and text, FAISS for vector search, and SQLite for simple metadata tracking. This README reflects the current project files and CLI in `main.py`.
 
 ## 📋 Table of Contents
 
@@ -135,15 +135,17 @@ pip install faiss-gpu
 
 ## ⚙️ Configuration
 
-Currently, the `config/settings.py` file is empty and reserved for future configuration expansion. Default values are hardcoded in `main.py`:
+The project exposes a small set of defaults in `main.py` and a few constants in `config/settings.py`.
 
-```python
-IMAGE_DIR = "data/images"           # Directory containing images to index
-INDEX_PATH = "data/index/faiss.index"  # Path to save/load FAISS index
-META_DB = "data/metadata/meta.db"   # Path to SQLite metadata database
-```
+- Default paths (defined in `main.py`):
+  - images: `data/images`
+  - FAISS index: `data/index/faiss.index`
+  - metadata DB: `data/metadata/meta.db`
+- Tunable defaults (in [config/settings.py](config/settings.py#L1-L3)):
+  - `SCORE_THRESHOLD` — score threshold used when opening results (default 0.35)
+  - `DEFAULT_TOP_K` — default number of results to return (default 5)
 
-To modify these paths, edit `main.py` directly or use command-line arguments.
+Use the CLI flags described below to override the image directory and ingest mode.
 
 ## 🚀 Usage
 
@@ -161,69 +163,35 @@ ImageRetrievalSystem/
 
 ### Ingesting Images
 
-The ingestion process scans a directory for images, creates embeddings using CLIP, and stores them in the FAISS index.
+The ingestion pipeline (`pipelines/ingest.py`) scans a folder, creates embeddings using the CLIP model, and writes vectors to the FAISS index while storing image paths and a content hash in SQLite.
 
-**Basic Usage**:
+Key details:
+- Two ingest modes are supported (CLI flag `--ingest_mode`):
+  - `append` (default): embed images and add them directly to an existing index; skip images already present in the DB.
+  - `rebuild`: collect vectors in-memory, train the FAISS index, add vectors, and rewrite the metadata DB. Use this for a fresh index creation.
+- Deduplication is based on a file hash stored in the metadata DB.
+
+Usage examples:
 ```bash
 python main.py ingest
-```
-
-**With Custom Image Directory**:
-```bash
-python main.py ingest --image_dir "path/to/your/images"
-```
-
-**Example**:
-```bash
-python main.py ingest --image_dir "data/images"
-```
-
-**What Happens During Ingestion**:
-1. Scans the specified directory for image files (.png, .jpg, .jpeg)
-2. Loads and preprocesses each image
-3. Generates 512-dimensional CLIP embeddings for each image
-4. Adds embeddings to FAISS index
-5. Records image paths in SQLite metadata database
-6. Displays progress with a progress bar
-7. Saves the FAISS index to disk
-
-**Progress Output**:
-```
-Ingesting images: 100%|████████████| 1500/1500 [15:23<00:00,  1.62it/s]
-✅ Ingestion complete
+python main.py ingest --image_dir "data/images" --ingest_mode rebuild
 ```
 
 ### Searching Images
 
-Query the indexed images using natural language text.
+The search pipeline (`pipelines/search.py`) embeds a text query, searches the FAISS index for nearest neighbors, then resolves FAISS IDs to image paths from the metadata DB.
 
-**Basic Usage**:
+Important behavior:
+- The `MetadataStore` maps FAISS index positions to DB rows. The implementation offsets FAISS IDs by +1 when querying SQLite (see [storage/metadata.py](storage/metadata.py#L1-L29)).
+- The search pipeline will attempt to open images that meet or exceed the configured confidence threshold.
+
+Usage examples:
 ```bash
 python main.py search "a dog playing in the park"
-```
-
-**With Custom Result Count**:
-```bash
 python main.py search "a dog playing in the park" --top_k 10
 ```
 
-**Example Queries**:
-```bash
-python main.py search "mountains and snow"
-python main.py search "people having fun"
-python main.py search "sunset over ocean"
-python main.py search "cats sleeping"
-```
-
-**Search Output**:
-```
-🔍 Results:
-data/images/dog1.jpg  (score=0.8642)
-data/images/dog2.jpg  (score=0.8231)
-data/images/dog3.jpg  (score=0.7956)
-data/images/animal.jpg  (score=0.7342)
-data/images/nature.jpg  (score=0.6921)
-```
+CLI note: `main.py` defines the `ingest` and `search` subcommands and exposes `--image_dir`, `--ingest_mode`, and `--top_k` flags. See [main.py](main.py#L1-L40).
 
 ### Advanced Options
 
@@ -233,7 +201,7 @@ python main.py search "beach" --top_k 20  # Get top 20 results
 python main.py search "beach" --top_k 1   # Get only the best match
 ```
 
-## 📁 Project Structure
+## 📁 Project Structure (current)
 
 ```
 ImageRetrievalSystem/
@@ -244,7 +212,7 @@ ImageRetrievalSystem/
 ├── LICENSE                # License information
 │
 ├── config/
-│   └── settings.py        # Configuration settings (expandable)
+│   └── settings.py        # Some default thresholds (SCORE_THRESHOLD, DEFAULT_TOP_K)
 │
 ├── core/
 │   ├── model.py           # CLIP model initialization and inference
