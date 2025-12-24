@@ -4,19 +4,43 @@ from core.model import CLIPModel
 from core.embedder import embed_text
 from storage.faiss_index import FaissIndex
 from storage.metadata import MetadataStore
+from utils.opener import open_image
 
 
-def run(query, index_path, meta_db, top_k=5):
+CONFIDENCE_THRESHOLD = 0.25
+TOP_K = 5
+
+
+def run(query, index_path, meta_db):
+    # Load model and stores
     model = CLIPModel()
     index = FaissIndex(dim=512, index_path=index_path)
     metadata = MetadataStore(meta_db)
 
+    # Embed text query
     query_vector = embed_text(model, query)
-    scores, ids = index.search(query_vector, top_k=top_k)
 
-    results = metadata.get_images(ids[0].tolist())
+    # Search FAISS
+    scores, ids = index.search(query_vector, TOP_K)
+    scores = scores.flatten()
+    ids = ids.flatten()
 
-    print("\n🔍 Results:")
-    for score, (img_id, path) in zip(scores[0], results):
-        print(f"{path}  (score={score:.4f})")
+    # Resolve IDs → image paths
+    results = []
+    for score, idx in zip(scores, ids):
+        path = metadata.get_path(int(idx))
+        if path is not None:
+            results.append((path, float(score)))
 
+    if not results:
+        print("⚠️ No results returned from FAISS")
+        return
+
+    print("\n🔍 Results (opening high confidence images):\n")
+
+    for path, score in results:
+        if score >= CONFIDENCE_THRESHOLD:
+            print(f"✅ {path}  (score={score:.4f})")
+            open_image(path)
+        else:
+            print(f"⚠️ LOW CONFIDENCE {path}  (score={score:.4f})")

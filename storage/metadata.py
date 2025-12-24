@@ -11,24 +11,42 @@ class MetadataStore:
         self.conn.execute("""
             CREATE TABLE IF NOT EXISTS images (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                image_path TEXT
+                image_path TEXT,
+                image_hash TEXT UNIQUE
             )
         """)
 
-    def add_image(self, image_path):
-        cursor = self.conn.cursor()
-        cursor.execute(
-            "INSERT INTO images (image_path) VALUES (?)",
-            (image_path,)
+    def image_exists(self, image_hash):
+        cur = self.conn.cursor()
+        cur.execute(
+            "SELECT 1 FROM images WHERE image_hash = ?",
+            (image_hash,)
+        )
+        return cur.fetchone() is not None
+
+    def add_image(self, image_path, image_hash):
+        cur = self.conn.cursor()
+        cur.execute(
+            "INSERT INTO images (image_path, image_hash) VALUES (?, ?)",
+            (image_path, image_hash)
         )
         self.conn.commit()
-        return cursor.lastrowid
+        return cur.lastrowid
 
     def get_images(self, ids):
-        cursor = self.conn.cursor()
+        cur = self.conn.cursor()
         q = ",".join("?" * len(ids))
-        cursor.execute(
+        cur.execute(
             f"SELECT id, image_path FROM images WHERE id IN ({q})",
             ids
         )
-        return cursor.fetchall()
+        return cur.fetchall()
+
+    def get_path(self, faiss_id):
+        cur = self.conn.cursor()
+        cur.execute(
+            "SELECT image_path FROM images WHERE id = ?",
+            (int(faiss_id) + 1,)
+        )
+        row = cur.fetchone()
+        return row[0] if row else None

@@ -2,11 +2,11 @@
 import argparse
 from pipelines.ingest import run as ingest_run
 from pipelines.search import run as search_run
+import os
 
-
-IMAGE_DIR = "data/images"
-INDEX_PATH = "data/index/faiss.index"
-META_DB = "data/metadata/meta.db"
+IMAGE_DIR = os.path.join("data", "images")
+INDEX_PATH = os.path.join("data", "index", "faiss.index")
+META_DB = os.path.join("data", "metadata", "meta.db")
 
 
 def main():
@@ -18,9 +18,20 @@ def main():
 
     # Ingest mode
     ingest_parser = subparsers.add_parser("ingest")
+
     ingest_parser.add_argument(
-        "--image_dir", default=IMAGE_DIR, help="Directory of images"
+        "--image_dir",
+        default=IMAGE_DIR,
+        help="Directory of images"
     )
+
+    ingest_parser.add_argument(
+        "--ingest_mode",
+        choices=["rebuild", "append"],
+        default="append",
+        help="Ingest mode"
+    )
+
 
     # Search mode
     search_parser = subparsers.add_parser("search")
@@ -35,17 +46,18 @@ def main():
 
     if args.mode == "ingest":
         ingest_run(
-            image_dir=args.image_dir,
-            index_path=INDEX_PATH,
-            meta_db=META_DB
-        )
+        image_dir=args.image_dir,
+        index_path=INDEX_PATH,
+        meta_db=META_DB,
+        ingest_mode=args.ingest_mode
+    )
+
 
     elif args.mode == "search":
         search_run(
             query=args.query,
             index_path=INDEX_PATH,
-            meta_db=META_DB,
-            top_k=args.top_k
+            meta_db=META_DB
         )
 
 
