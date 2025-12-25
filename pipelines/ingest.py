@@ -1,76 +1,52 @@
-# Phase 1 & 2 (local + colab)
-
 import os
-import numpy as np
+from PIL import Image
 from tqdm import tqdm
+import torch
 
-from core.model import CLIPModel
-from core.embedder import embed_image
-from storage.faiss_index import FaissIndex
+from transformers import BlipProcessor, BlipForConditionalGeneration
+from sentence_transformers import SentenceTransformer
+
 from storage.metadata import MetadataStore
-from utils.hash_utils import hash_file
+from storage.faiss_index import FaissIndex
+
+def run(image_dir, index_path, meta_db):
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    # Models
+    caption_processor = BlipProcessor.from_pretrained(
+        "Salesforce/blip-image-captioning-base"
+    )
+    caption_model = BlipForConditionalGeneration.from_pretrained(
+        "Salesforce/blip-image-captioning-base",
+        use_safetensors=True
+    ).to(device)
 
 
-def run(image_dir, index_path, meta_db, ingest_mode="append"):
-    # ---------- REBUILD SAFETY ----------
-    if ingest_mode == "rebuild":
-        if os.path.exists(index_path):
-            os.remove(index_path)
-            print("🗑️ Deleted old FAISS index")
+    embedder = SentenceTransformer("all-MiniLM-L6-v2")
 
-        if os.path.exists(meta_db):
-            os.remove(meta_db)
-            print("🗑️ Deleted old metadata DB")
-
-    model = CLIPModel()
-    index = FaissIndex(dim=512, index_path=index_path)
     metadata = MetadataStore(meta_db)
+    index = FaissIndex(dim=384, path=index_path)
 
     images = [
         os.path.join(image_dir, f)
         for f in os.listdir(image_dir)
-        if f.lower().endswith((".jpg", ".jpeg", ".png"))
+        if f.lower().endswith((".jpg", ".png", ".jpeg"))
     ]
 
-    print(f"📸 Found {len(images)} images on disk")
+    print(f"📸 Found {len(images)} images")
 
-    vectors_buffer = []
-    meta_buffer = []
-    seen_hashes = set()  # 🔑 FIX
+    for img_path in tqdm(images):
+        image = Image.open(img_path).convert("RGB")
 
-    for img_path in tqdm(images, desc="Processing images"):
-        img_hash = hash_file(img_path)
+        inputs = caption_processor(image, return_tensors="pt").to(device)
+        out = caption_model.generate(**inputs, max_new_tokens=30)
+        caption = caption_processor.decode(out[0], skip_special_tokens=True)
 
-        # Skip duplicates (both DB + current batch)
-        if img_hash in seen_hashes or metadata.image_exists(img_hash):
-            continue
+        vector = embedder.encode([caption], convert_to_numpy=True)
 
-        vector = embed_image(model, img_path)
-
-        if ingest_mode == "rebuild":
-            seen_hashes.add(img_hash)
-            vectors_buffer.append(vector)
-            meta_buffer.append((img_path, img_hash))
-        else:
-            index.add(vector)
-            metadata.add_image(img_path, img_hash)
-
-    if ingest_mode == "rebuild":
-        if not vectors_buffer:
-            print("⚠️ No new images to ingest")
-            return
-
-        vectors_np = np.vstack(vectors_buffer).astype("float32")
-
-        print("🧠 Training FAISS index...")
-        index.train(vectors_np)
-
-        print("➕ Adding vectors to FAISS index...")
-        index.add(vectors_np)
-
-        print("🗂️ Writing metadata...")
-        for img_path, img_hash in meta_buffer:
-            metadata.add_image(img_path, img_hash)
+        metadata.add(img_path, caption)
+        index.add(vector)
 
     index.save()
     print("✅ Ingestion complete")
+

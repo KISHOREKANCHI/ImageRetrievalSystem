@@ -19,4 +19,4 @@ def open_image(path):
         return
    
     os.startfile(path)  # Windows
-    time.sleep(0.3)
+    time.sleep(0.3)  # Give the viewer time to open

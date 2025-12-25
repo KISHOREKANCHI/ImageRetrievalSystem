@@ -1,8 +1,7 @@
 torch
-torchvision
+transformers
+sentence-transformers
 faiss-cpu
-open_clip_torch
 pillow
-numpy
 tqdm
 sqlite-utils
